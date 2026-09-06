@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"myagent/internal/siu"
+	"github.com/111hell/tinkerbot/internal/siu"
 )
 
 var ErrSchedulerClosed = errors.New("scheduler closed")

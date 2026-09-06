@@ -1,4 +1,4 @@
-module myagent
+module github.com/111hell/tinkerbot
 
 go 1.27.0
 

@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 
 	"github.com/111hell/tinker/agent"
+	"github.com/111hell/tinkerbot/internal/chat"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"myagent/internal/chat"
 )
 
 var ErrNotFound = chat.ErrNotFound

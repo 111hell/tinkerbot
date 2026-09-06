@@ -3,9 +3,17 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/111hell/tinkerbot/internal/tools"
+)
+
+const (
+	ChannelCLI = "cli"
+	ChannelSIU = "siu"
 )
 
 type Config struct {
@@ -26,19 +34,33 @@ type ChannelConfig struct {
 	Tools []string `yaml:"tools"`
 }
 
-// EnabledTools resolves channel override, global default, then legacy defaults.
-// Explicit empty lists are preserved and disable tools at that scope.
+// EnabledTools combines global and channel tools. When neither is configured,
+// it falls back to the legacy channel defaults.
 func (c *Config) EnabledTools(ch ChannelConfig) []string {
-	if ch.Tools != nil {
-		return ch.Tools
+	if c.Tools == nil && ch.Tools == nil {
+		switch ch.Type {
+		case ChannelSIU:
+			return tools.DefaultSIUNames()
+		default:
+			return nil
+		}
 	}
-	if c.Tools != nil {
-		return c.Tools
+	return mergeTools(c.Tools, ch.Tools)
+}
+
+func mergeTools(lists ...[]string) []string {
+	merged := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, list := range lists {
+		for _, name := range list {
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			merged = append(merged, name)
+		}
 	}
-	if ch.Type == "siu" {
-		return []string{"siu_list_messages", "siu_search_contacts"}
-	}
-	return nil
+	return merged
 }
 
 func (c *Config) EnabledChannels() []ChannelConfig {
@@ -48,7 +70,7 @@ func (c *Config) EnabledChannels() []ChannelConfig {
 	if c.Channel.Type != "" {
 		return []ChannelConfig{c.Channel}
 	}
-	return []ChannelConfig{{Type: "cli"}}
+	return []ChannelConfig{{Type: ChannelCLI}}
 }
 
 type AgentConfig struct {
@@ -70,7 +92,11 @@ func (c *Config) Validate() error {
 	seen := make(map[string]bool)
 	for _, ch := range channels {
 		switch ch.Type {
-		case "cli", "siu":
+		case ChannelCLI:
+		case ChannelSIU:
+			if strings.TrimSpace(c.ListenAddr) == "" {
+				return fmt.Errorf("listen_addr is required for siu channel")
+			}
 		default:
 			return fmt.Errorf("unsupported channel %q (available: cli, siu)", ch.Type)
 		}
@@ -85,14 +111,21 @@ func (c *Config) Validate() error {
 	if c.Agent.RunTimeout <= 0 {
 		return fmt.Errorf("agent.run_timeout must be positive")
 	}
+	if strings.TrimSpace(c.Model.BaseURL) == "" {
+		return fmt.Errorf("model.base_url is required")
+	}
+	if strings.TrimSpace(c.Model.Name) == "" {
+		return fmt.Errorf("model.name is required")
+	}
+	if strings.TrimSpace(c.LogLevel) == "" {
+		return fmt.Errorf("log_level is required")
+	}
 	return nil
 }
 
 func validateTools(names []string) error {
 	for _, name := range names {
-		switch name {
-		case "siu_list_messages", "siu_search_contacts":
-		default:
+		if !tools.IsKnown(name) {
 			return fmt.Errorf("unknown tool %q", name)
 		}
 	}
@@ -120,16 +153,7 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read config %q: %w", path, err)
 	}
-	cfg := &Config{
-		Agent: AgentConfig{
-			SystemPrompt: "You are a helpful assistant. Answer the user directly and concisely. Never claim an action succeeded without evidence.",
-			RunTimeout:   2 * time.Minute,
-		},
-		Model:      ModelConfig{BaseURL: "https://api.deepseek.com", Name: "deepseek-chat"},
-		SQLite:     SQLiteConfig{Path: "myagent.db"},
-		ListenAddr: ":8080",
-		LogLevel:   "info",
-	}
+	cfg := &Config{}
 	if err := yaml.Unmarshal([]byte(os.ExpandEnv(string(data))), cfg); err != nil {
 		return nil, fmt.Errorf("decode config %q: %w", path, err)
 	}

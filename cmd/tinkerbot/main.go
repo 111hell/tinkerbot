@@ -17,30 +17,30 @@ import (
 	"github.com/111hell/tinker/agent"
 	"github.com/111hell/tinker/model/openaicompat"
 
-	"myagent/internal/channel"
-	"myagent/internal/channel/cli"
-	siuchannel "myagent/internal/channel/siu"
-	"myagent/internal/chat"
-	"myagent/internal/config"
-	"myagent/internal/logging"
-	"myagent/internal/siu"
-	"myagent/internal/skills"
-	"myagent/internal/storage"
-	"myagent/internal/tools"
-	"myagent/internal/toolscope"
+	"github.com/111hell/tinkerbot/internal/channel"
+	"github.com/111hell/tinkerbot/internal/channel/cli"
+	siuchannel "github.com/111hell/tinkerbot/internal/channel/siu"
+	"github.com/111hell/tinkerbot/internal/chat"
+	"github.com/111hell/tinkerbot/internal/config"
+	"github.com/111hell/tinkerbot/internal/logging"
+	"github.com/111hell/tinkerbot/internal/siu"
+	"github.com/111hell/tinkerbot/internal/skills"
+	"github.com/111hell/tinkerbot/internal/storage"
+	"github.com/111hell/tinkerbot/internal/tools"
+	"github.com/111hell/tinkerbot/internal/toolscope"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := runMain(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil && !errors.Is(err, context.Canceled) {
-		slog.Error("myagent stopped", "error", err)
+		slog.Error("tinkerbot stopped", "error", err)
 		os.Exit(1)
 	}
 }
 
 func runMain(ctx context.Context, args []string, input io.ReadCloser, output, diagnostics io.Writer) error {
-	flags := flag.NewFlagSet("myagent", flag.ContinueOnError)
+	flags := flag.NewFlagSet("tinkerbot", flag.ContinueOnError)
 	flags.SetOutput(diagnostics)
 	path := flags.String("config", "config.yaml", "YAML configuration file")
 	kind := flags.String("channel", "", "override channels (comma-separated: cli,siu)")
@@ -87,8 +87,14 @@ func runMain(ctx context.Context, args []string, input io.ReadCloser, output, di
 	var client *siu.Client
 	needSIU := false
 	for _, ch := range cfg.EnabledChannels() {
-		if ch.Type == "siu" || len(cfg.EnabledTools(ch)) > 0 {
+		switch ch.Type {
+		case config.ChannelSIU:
 			needSIU = true
+		default:
+			needSIU = tools.RequiresSIU(cfg.EnabledTools(ch))
+		}
+		if needSIU {
+			break
 		}
 	}
 	if needSIU {
@@ -135,10 +141,12 @@ func runMain(ctx context.Context, args []string, input io.ReadCloser, output, di
 	var transports []channel.Channel
 	for _, ch := range cfg.EnabledChannels() {
 		switch ch.Type {
-		case "cli":
+		case config.ChannelCLI:
 			transports = append(transports, cli.New(input, output, diagnostics, sessions.Session("cli:default", cfg.EnabledTools(ch)...)))
-		case "siu":
+		case config.ChannelSIU:
 			transports = append(transports, siuchannel.New(client, sessions, legacyStore, logger, cfg.ListenAddr, cfg.SIU.WebhookURL, cfg.EnabledTools(ch)))
+		default:
+			return fmt.Errorf("unsupported channel %q", ch.Type)
 		}
 	}
 	return channel.RunAll(ctx, transports...)

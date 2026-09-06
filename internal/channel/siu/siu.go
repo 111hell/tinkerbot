@@ -8,11 +8,11 @@ import (
 	"net/http"
 	"time"
 
-	"myagent/internal/chat"
-	"myagent/internal/conversation"
-	"myagent/internal/events"
-	"myagent/internal/run"
-	siuapi "myagent/internal/siu"
+	"github.com/111hell/tinkerbot/internal/chat"
+	"github.com/111hell/tinkerbot/internal/conversation"
+	"github.com/111hell/tinkerbot/internal/events"
+	"github.com/111hell/tinkerbot/internal/run"
+	siuapi "github.com/111hell/tinkerbot/internal/siu"
 )
 
 // Channel owns only SIU protocol adaptation and delivery lifecycle.

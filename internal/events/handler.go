@@ -10,11 +10,11 @@ import (
 
 	"github.com/111hell/tinker/agent"
 
-	"myagent/internal/chat"
-	"myagent/internal/conversation"
-	"myagent/internal/run"
-	"myagent/internal/siu"
-	"myagent/internal/toolscope"
+	"github.com/111hell/tinkerbot/internal/chat"
+	"github.com/111hell/tinkerbot/internal/conversation"
+	"github.com/111hell/tinkerbot/internal/run"
+	"github.com/111hell/tinkerbot/internal/siu"
+	"github.com/111hell/tinkerbot/internal/toolscope"
 )
 
 var errStreamClosed = errors.New("SIU reply stream closed")

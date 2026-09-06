@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"myagent/internal/channel"
+	"github.com/111hell/tinkerbot/internal/channel"
 )
 
 type CLI struct {
@@ -49,7 +49,7 @@ func (c *CLI) Run(ctx context.Context) error {
 			}
 		}
 	}()
-	if _, err := fmt.Fprintln(c.diagnostics, "MyAgent · /new 清空会话 · /exit 退出 · Ctrl-D 结束输入"); err != nil {
+	if _, err := fmt.Fprintln(c.diagnostics, "TinkerBot · /new 清空会话 · /exit 退出 · Ctrl-D 结束输入"); err != nil {
 		return err
 	}
 	for {

@@ -31,7 +31,7 @@ CLI 和 SIU 不再分别构造 Agent。启动入口只创建一次模型、Agent
 
 | 层           | 模块                                  | 职责                                            |
 | ------------ | ------------------------------------- | ----------------------------------------------- |
-| 组装         | `cmd/myagent/main.go`               | 配置、模型、工具、Agent、存储及适配器组装       |
+| 组装         | `cmd/tinkerbot/main.go`             | 配置、模型、工具、Agent、存储及适配器组装       |
 | 接入         | `internal/channel/cli`              | stdin、stdout、命令和 CLI 会话 ID               |
 | 接入         | `internal/channel/siu`              | SIU 身份验证、Webhook 注册、HTTP 生命周期       |
 | SIU 适配     | `internal/events`、`internal/run` | 协议事件、Topic 调度、运行取消、消息交付        |
@@ -104,11 +104,11 @@ sequenceDiagram
 
 ## 4. 工具 scope
 
-工具实现一次注册到共享 Agent。工具列表先按渠道覆盖全局的规则解析，再由每个 session 的可信 context 携带启用列表，模型请求和实际执行都检查这个列表。运行层和工具权限模块均不根据渠道名称分支。
+工具实现一次注册到共享 Agent。工具列表由全局和渠道配置合并而成，再由每个 session 的可信 context 携带启用列表，模型请求和实际执行都检查这个列表。运行层和工具权限模块均不根据渠道名称分支。
 
 ```mermaid
 flowchart TD
-    Config["渠道 tools 覆盖全局 tools"] --> Adapter["接入层为本轮注入启用列表"]
+    Config["全局 tools + 渠道 tools 合并"] --> Adapter["接入层为本轮注入启用列表"]
     Adapter --> Scope["不可由模型参数设置的 context"]
     Scope --> Filter["toolscope.Model"]
     All["Agent 注册的完整工具定义"] --> Filter
@@ -192,8 +192,8 @@ Webhook 204 表示事件分发完成，不表示模型回答完成。后台处�
 | 旧 SIU 表    | `conversations`，主键为原始 TopicID，仅用于兼容补充历史                           |
 | 旧数据导入   | 新 SIU session 不存在时读取旧历史；没有旧历史时查询 SIU，初始化时不覆盖已有 session |
 | 内存模式     | `sqlite.path: ""`，所有历史随进程退出清空                                         |
-| SQLite 模式  | 路径非空，所有 channel 的 session 都持久化；默认`myagent.db`                      |
-| 统一配置模板 | `config.example.yaml`，使用 `myagent.db`；临时会话可设空路径                    |
+| SQLite 模式  | 路径非空，所有 channel 的 session 都持久化；默认`tinkerbot.db`                    |
+| 统一配置模板 | `config.example.yaml`，使用 `tinkerbot.db`；临时会话可设空路径                  |
 | 历史裁剪     | 尚未实现，每轮传入累计完整历史                                                      |
 | 隔离边界     | 新旧表分开，原始 TopicID 无法碰撞另一个渠道的新 session 行                          |
 
@@ -210,15 +210,15 @@ agent:
   system_prompt: "You are a helpful assistant."
   run_timeout: 2m
 sqlite:
-  path: myagent.db
+  path: tinkerbot.db
 ```
 
-旧 `channel.type` 配置继续支持，但不能与 `channels` 同时出现；未配置渠道时默认 CLI。`-channel cli,siu` 覆盖启动列表，同时保留 YAML 中已配置渠道的工具名单。未知渠道、重复渠道、未知工具、空启动列表和非正超时会被拒绝。工具优先级为渠道显式 `tools`、全局 `tools`、原渠道默认值，采用整体覆盖而非合并。渠道空列表关闭本渠道工具；全局空列表关闭所有继承渠道的工具。全局与渠道都未配置时，CLI 默认无工具、SIU 默认两个查询工具。全局工具名称即使被所有渠道覆盖，也会接受校验。
+旧 `channel.type` 配置继续支持，但不能与 `channels` 同时出现；未配置渠道时默认 CLI。`-channel cli,siu` 覆盖启动列表，同时保留 YAML 中已配置渠道的工具名单。未知渠道、重复渠道、未知工具、空启动列表和非正超时会被拒绝。全局 `tools` 与渠道 `tools` 按此顺序合并，重复项只保留一次；空列表不会移除另一层的工具。全局与渠道都未配置时，CLI 默认无工具、SIU 默认两个查询工具。
 
 `model.*`、`agent.*`、`skills_dir` 为共享配置。SIU 的地址、凭证、Webhook 和监听地址仍由接入层使用。环境变量从进程环境展开，程序不自动加载 `.env`。
 
 ## 8. 验证与源码入口
 
-关键代码：[组装入口](https://github.com/111hell/tinkerbot/blob/main/cmd/myagent/main.go)、[共享运行服务](https://github.com/111hell/tinkerbot/blob/main/internal/chat/service.go)、[工具能力校验](https://github.com/111hell/tinkerbot/blob/main/internal/toolscope/scope.go)、[多渠道生命周期](https://github.com/111hell/tinkerbot/blob/main/internal/channel/run.go)、[SIU 适配器](https://github.com/111hell/tinkerbot/blob/main/internal/channel/siu/siu.go)。
+关键代码：[组装入口](https://github.com/111hell/tinkerbot/blob/main/cmd/tinkerbot/main.go)、[共享运行服务](https://github.com/111hell/tinkerbot/blob/main/internal/chat/service.go)、[工具能力校验](https://github.com/111hell/tinkerbot/blob/main/internal/toolscope/scope.go)、[多渠道生命周期](https://github.com/111hell/tinkerbot/blob/main/internal/channel/run.go)、[SIU 适配器](https://github.com/111hell/tinkerbot/blob/main/internal/channel/siu/siu.go)。
 
 仓库不包含 `_test.go` 文件，使用 `go build ./...` 和 `go vet ./...` 进行构建与静态检查。真实模型或 SIU 服务仍需另行联调。Telegram 尚未实现，需要新增接入适配器、身份映射及渠道配置；共享运行层不需要增加 Telegram 分支。

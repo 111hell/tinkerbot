@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"myagent/internal/conversation"
-	"myagent/internal/run"
-	"myagent/internal/siu"
+	"github.com/111hell/tinkerbot/internal/conversation"
+	"github.com/111hell/tinkerbot/internal/run"
+	"github.com/111hell/tinkerbot/internal/siu"
 )
 
 type EventScheduler interface {

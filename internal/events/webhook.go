@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"myagent/internal/siu"
+	"github.com/111hell/tinkerbot/internal/siu"
 )
 
 func NewWebhookHandler(dispatcher *Dispatcher) http.Handler {

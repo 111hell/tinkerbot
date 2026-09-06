@@ -4,7 +4,7 @@ package chat
 import (
 	"context"
 	"github.com/111hell/tinker/agent"
-	"myagent/internal/toolscope"
+	"github.com/111hell/tinkerbot/internal/toolscope"
 )
 
 // Session binds a conversation ID to the shared service.

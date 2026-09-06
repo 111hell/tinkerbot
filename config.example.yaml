@@ -1,8 +1,9 @@
 # 唯一配置模板。按需复制为 config.yaml（已被 Git 忽略）。
 # 直接在 YAML 中填写以下配置，无需 .env 文件。
+# 模型、Agent、存储、监听地址和日志设置从此文件读取，加载时不补默认值。
 # 也支持 "${变量名}" 引用已导出的环境变量；程序不会自动加载 .env。
-# CLI：go run ./cmd/myagent -config config.example.yaml -channel cli
-# CLI + SIU：go run ./cmd/myagent -config config.example.yaml
+# CLI：go run ./cmd/tinkerbot -config config.example.yaml -channel cli
+# CLI + SIU：go run ./cmd/tinkerbot -config config.example.yaml
 
 # 共享模型与 Agent
 model:
@@ -14,9 +15,9 @@ agent:
   system_prompt: "You are a helpful assistant. Answer concisely, use enabled tools when relevant, and never invent data."
   run_timeout: 2m
 
-tools: [] # 全局通用工具；渠道 tools 整体覆盖此列表。
+tools: [] # 全局通用工具；与渠道 tools 合并。
 
-# 启用的渠道与专用工具
+# 启用的渠道与追加工具
 channels:
   - type: cli
     tools: []
@@ -27,11 +28,11 @@ channels:
 siu:
   base_url: "" # SIU 服务地址；也可填 "${SIU_BASE_URL}"。
   bot_token: "" # SIU Bot 凭证；也可填 "${SIU_BOT_TOKEN}"。
-  webhook_url: "" # SIU 可访问的回调地址，含 /webhook；也可填 "${MYAGENT_WEBHOOK_URL}"。
+  webhook_url: "" # SIU 可访问的回调地址，含 /webhook；也可填 "${TINKERBOT_WEBHOOK_URL}"。
 listen_addr: ":8080"
 
 # 共享历史、Skill 与日志
 sqlite:
-  path: "myagent.db" # 空字符串使用内存，不持久化。
+  path: "tinkerbot.db" # 空字符串使用内存，不持久化。
 skills_dir: "" # 非空时加载 */SKILL.md，内容加入共享提示词。
 log_level: "info"

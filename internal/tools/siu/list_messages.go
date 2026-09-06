@@ -8,8 +8,8 @@ import (
 
 	"github.com/111hell/tinker/agent"
 
-	"myagent/internal/conversation"
-	siuc "myagent/internal/siu"
+	"github.com/111hell/tinkerbot/internal/conversation"
+	siuc "github.com/111hell/tinkerbot/internal/siu"
 )
 
 type listMessagesArgs struct {
@@ -22,7 +22,7 @@ type listMessagesResult struct {
 
 func NewListMessages(client *siuc.Client) agent.Tool {
 	return agent.Tool{
-		Name:        "siu_list_messages",
+		Name:        ListMessagesName,
 		Description: "List recent messages from the current private SIU conversation.",
 		InputSchema: `{"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":false}`,
 		Execute: func(ctx context.Context, arguments string) (string, error) {

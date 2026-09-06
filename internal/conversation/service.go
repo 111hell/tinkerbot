@@ -7,9 +7,9 @@ import (
 
 	"github.com/111hell/tinker/agent"
 
-	"myagent/internal/chat"
-	"myagent/internal/siu"
-	"myagent/internal/storage"
+	"github.com/111hell/tinkerbot/internal/chat"
+	"github.com/111hell/tinkerbot/internal/siu"
+	"github.com/111hell/tinkerbot/internal/storage"
 )
 
 type SIUHistory interface {

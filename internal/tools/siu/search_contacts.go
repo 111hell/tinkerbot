@@ -10,8 +10,8 @@ import (
 
 	"github.com/111hell/tinker/agent"
 
-	"myagent/internal/conversation"
-	siuc "myagent/internal/siu"
+	"github.com/111hell/tinkerbot/internal/conversation"
+	siuc "github.com/111hell/tinkerbot/internal/siu"
 )
 
 type searchContactsArgs struct {
@@ -25,7 +25,7 @@ type searchContactsResult struct {
 
 func NewSearchContacts(client *siuc.Client) agent.Tool {
 	return agent.Tool{
-		Name:        "siu_search_contacts",
+		Name:        SearchContactsName,
 		Description: "Search the current private-chat user's SIU contacts by name, alias, remark, or username and return matching user profiles.",
 		InputSchema: `{"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer"}},"required":["query"],"additionalProperties":false}`,
 		Execute: func(ctx context.Context, arguments string) (string, error) {

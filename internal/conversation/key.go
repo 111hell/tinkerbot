@@ -3,7 +3,7 @@ package conversation
 import (
 	"fmt"
 
-	"myagent/internal/siu"
+	"github.com/111hell/tinkerbot/internal/siu"
 )
 
 type Key struct {
