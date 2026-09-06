@@ -1,0 +1,37 @@
+# 唯一配置模板。按需复制为 config.yaml（已被 Git 忽略）。
+# 直接在 YAML 中填写以下配置，无需 .env 文件。
+# 也支持 "${变量名}" 引用已导出的环境变量；程序不会自动加载 .env。
+# CLI：go run ./cmd/myagent -config config.example.yaml -channel cli
+# CLI + SIU：go run ./cmd/myagent -config config.example.yaml
+
+# 共享模型与 Agent
+model:
+  api_key: "" # 必填，CLI 与 SIU 共用；也可填 "${DEEPSEEK_API_KEY}"。
+  base_url: "https://api.deepseek.com"
+  name: "deepseek-v4-flash"
+
+agent:
+  system_prompt: "You are a helpful assistant. Answer concisely, use enabled tools when relevant, and never invent data."
+  run_timeout: 2m
+
+tools: [] # 全局通用工具；渠道 tools 整体覆盖此列表。
+
+# 启用的渠道与专用工具
+channels:
+  - type: cli
+    tools: []
+  - type: siu
+    tools: [siu_list_messages, siu_search_contacts]
+
+# SIU 接入设置，仅启用 SIU 时使用
+siu:
+  base_url: "" # SIU 服务地址；也可填 "${SIU_BASE_URL}"。
+  bot_token: "" # SIU Bot 凭证；也可填 "${SIU_BOT_TOKEN}"。
+  webhook_url: "" # SIU 可访问的回调地址，含 /webhook；也可填 "${MYAGENT_WEBHOOK_URL}"。
+listen_addr: ":8080"
+
+# 共享历史、Skill 与日志
+sqlite:
+  path: "myagent.db" # 空字符串使用内存，不持久化。
+skills_dir: "" # 非空时加载 */SKILL.md，内容加入共享提示词。
+log_level: "info"
