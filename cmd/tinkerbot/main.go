@@ -98,7 +98,7 @@ func runMain(ctx context.Context, args []string, input io.ReadCloser, output, di
 		}
 	}
 	if needSIU {
-		client, err = siu.NewClient(cfg.SIU.BaseURL, cfg.SIU.BotToken, &http.Client{Timeout: 30 * time.Second})
+		client, err = siu.NewClient(cfg.SIU.BaseURL, cfg.SIU.BotToken, &http.Client{Timeout: 40 * time.Second})
 		if err != nil {
 			return err
 		}
@@ -144,7 +144,7 @@ func runMain(ctx context.Context, args []string, input io.ReadCloser, output, di
 		case config.ChannelCLI:
 			transports = append(transports, cli.New(input, output, diagnostics, sessions.Session("cli:default", cfg.EnabledTools(ch)...)))
 		case config.ChannelSIU:
-			transports = append(transports, siuchannel.New(client, sessions, legacyStore, logger, cfg.ListenAddr, cfg.SIU.WebhookURL, cfg.EnabledTools(ch)))
+			transports = append(transports, siuchannel.New(client, sessions, legacyStore, logger, cfg.ListenAddr, cfg.SIU.WebhookURL, cfg.SIU.ReceiveMode, cfg.EnabledTools(ch)))
 		default:
 			return fmt.Errorf("unsupported channel %q", ch.Type)
 		}

@@ -26,7 +26,12 @@ func NewService(store chat.Store, history SIUHistory) *Service {
 }
 
 func (s *Service) LoadHistory(ctx context.Context, key Key, currentMessageID string) ([]agent.Message, error) {
-	messages, err := s.store.Load(ctx, key.TopicID)
+	// SIU exposes remote history only for private chats; group history starts
+	// with events observed by this application and lives in the session store.
+	if key.GroupID != 0 {
+		return nil, nil
+	}
+	messages, err := s.store.Load(ctx, key.ID())
 	if err == nil {
 		return messages, nil
 	}
@@ -46,14 +51,14 @@ func (s *Service) LoadHistory(ctx context.Context, key Key, currentMessageID str
 }
 
 func (s *Service) SaveHistory(ctx context.Context, key Key, messages []agent.Message) error {
-	if err := s.store.Save(ctx, key.TopicID, messages); err != nil {
+	if err := s.store.Save(ctx, key.ID(), messages); err != nil {
 		return fmt.Errorf("save conversation: %w", err)
 	}
 	return nil
 }
 
 func (s *Service) ImportFork(ctx context.Context, key Key, messages []*siu.Message) error {
-	if _, err := s.store.Load(ctx, key.TopicID); err == nil {
+	if _, err := s.store.Load(ctx, key.ID()); err == nil {
 		return nil
 	} else if !errors.Is(err, storage.ErrNotFound) {
 		return fmt.Errorf("load fork conversation: %w", err)
@@ -61,7 +66,7 @@ func (s *Service) ImportFork(ctx context.Context, key Key, messages []*siu.Messa
 	history := make([]agent.Message, 0, len(messages))
 	for _, message := range messages {
 		if message != nil {
-			history = append(history, historyMessage(key, message.UserID, message.Text))
+			history = append(history, historyMessage(key, message.UserID, MessageText(message.Text, message.Attachment)))
 		}
 	}
 	return s.SaveHistory(ctx, key, history)
@@ -84,7 +89,7 @@ func toAgentHistory(key Key, newestFirst []*siu.HistoryMessage, currentMessageID
 		if message == nil || message.DeletedAt != nil || message.TopicID != key.TopicID {
 			continue
 		}
-		messages = append(messages, historyMessage(key, message.FromUserID, message.Text))
+		messages = append(messages, historyMessage(key, message.FromUserID, MessageText(message.Text, message.Attachment)))
 	}
 	return messages
 }

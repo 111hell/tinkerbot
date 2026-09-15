@@ -2,6 +2,27 @@ package siu
 
 import "context"
 
+type QueryUserRequest struct {
+	UserID   uint64 `json:"user_id,omitempty"`
+	Username string `json:"username,omitempty"`
+}
+
+type UserInfo struct {
+	ID        uint64 `json:"id"`
+	Username  string `json:"username"`
+	Nickname  string `json:"nickname"`
+	AvatarURL string `json:"avatar_url"`
+}
+
+// QueryUser requires a privileged Bot. UserID takes precedence over Username.
+func (c *Client) QueryUser(ctx context.Context, request QueryUserRequest) (*UserInfo, error) {
+	var response UserInfo
+	if err := c.post(ctx, "user.queryUser", request, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
 type SearchContactsRequest struct {
 	UserID uint64 `json:"user_id"`
 	Query  string `json:"query"`

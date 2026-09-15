@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/111hell/tinker/agent"
+
+	"github.com/111hell/tinkerbot/internal/logging"
 )
 
 var ErrNotFound = errors.New("session not found")
@@ -72,7 +74,22 @@ func (s *Service) acquire(ctx context.Context, id string) (func(), error) {
 
 // Run serializes the entire turn for a session, including persistence and event
 // delivery. Callbacks must not re-enter this service for the same session.
-func (s *Service) Run(ctx context.Context, id, input string, emit func(agent.Event) error) error {
+func (s *Service) Run(ctx context.Context, id, input string, emit func(agent.Event) error) (runErr error) {
+	logger := logging.FromContext(ctx).With("session_id", id)
+	ctx = logging.WithLogger(ctx, logger)
+	started := time.Now()
+	logger.InfoContext(ctx, "agent run waiting", "input_bytes", len(input), "timeout_ms", s.timeout.Milliseconds())
+	defer func() {
+		attrs := []any{"duration_ms", time.Since(started).Milliseconds()}
+		switch {
+		case runErr == nil:
+			logger.InfoContext(ctx, "agent run completed", attrs...)
+		case errors.Is(runErr, context.Canceled):
+			logger.InfoContext(ctx, "agent run canceled", attrs...)
+		default:
+			logger.ErrorContext(ctx, "agent run failed", append(attrs, "error", runErr)...)
+		}
+	}()
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 	release, err := s.acquire(ctx, id)
@@ -84,12 +101,34 @@ func (s *Service) Run(ctx context.Context, id, input string, emit func(agent.Eve
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
+	logger.InfoContext(ctx, "agent run started", "history_messages", len(history), "wait_ms", time.Since(started).Milliseconds())
+	firstOutput := false
+	toolStarts := make(map[string]time.Time)
 	for event, err := range s.runner.Run(ctx, history, input) {
 		if err != nil {
 			return err
 		}
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		switch event.Type {
+		case agent.MessageDelta:
+			if !firstOutput && (event.Delta.Text != "" || event.Delta.Reasoning != "" || event.Delta.ToolCall != nil) {
+				firstOutput = true
+				logger.InfoContext(ctx, "agent first output", "elapsed_ms", time.Since(started).Milliseconds())
+			}
+		case agent.ToolStarted:
+			toolStarts[event.ToolCall.ID] = time.Now()
+			logger.InfoContext(ctx, "agent tool started", "tool", event.ToolCall.Name, "tool_call_id", event.ToolCall.ID)
+		case agent.ToolCompleted:
+			attrs := []any{"tool", event.ToolCall.Name, "tool_call_id", event.ToolCall.ID, "result_bytes", len(event.Message.Text)}
+			if start, ok := toolStarts[event.ToolCall.ID]; ok {
+				attrs = append(attrs, "duration_ms", time.Since(start).Milliseconds())
+				delete(toolStarts, event.ToolCall.ID)
+			}
+			logger.InfoContext(ctx, "agent tool completed", attrs...)
+		case agent.RunCompleted:
+			logger.InfoContext(ctx, "agent generation completed", "input_tokens", event.Usage.InputTokens, "output_tokens", event.Usage.OutputTokens, "reasoning_tokens", event.Usage.ReasoningTokens, "total_tokens", event.Usage.TotalTokens)
 		}
 		if event.Type == agent.RunCompleted {
 			if err := s.store.Save(ctx, id, event.Messages); err != nil {

@@ -10,6 +10,7 @@ import (
 )
 
 var ErrSchedulerClosed = errors.New("scheduler closed")
+var ErrQueueFull = errors.New("SIU event queue is full")
 
 type Handler interface {
 	Handle(context.Context, *siu.Event) error
@@ -44,25 +45,34 @@ func NewScheduler(parent context.Context, handler Handler, maxConcurrent, maxPen
 	}
 }
 
-func (s *Scheduler) Submit(ctx context.Context, topicID string, event *siu.Event) error {
+func (s *Scheduler) Submit(ctx context.Context, conversationID string, event *siu.Event, accept func()) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	select {
 	case s.pending <- struct{}{}:
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-s.ctx.Done():
 		return ErrSchedulerClosed
+	default:
+		// Webhooks have a ten-second delivery deadline. Never hold acceptance
+		// (and control events behind it) until a model run frees queue capacity.
+		return ErrQueueFull
 	}
 
 	s.mu.Lock()
-	if s.closed {
+	if s.closed || s.ctx.Err() != nil {
 		s.mu.Unlock()
 		<-s.pending
 		return ErrSchedulerClosed
 	}
-	l := s.lanes[topicID]
+	// The lane cannot observe this event before its run intent is registered.
+	accept()
+	l := s.lanes[conversationID]
 	if l == nil {
-		l = &lane{key: topicID, wake: make(chan struct{}, 1)}
-		s.lanes[topicID] = l
+		l = &lane{key: conversationID, wake: make(chan struct{}, 1)}
+		s.lanes[conversationID] = l
 		s.wg.Add(1)
 		go s.runLane(l)
 	}

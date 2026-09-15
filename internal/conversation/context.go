@@ -5,6 +5,7 @@ import "context"
 type Current struct {
 	UserID  uint64
 	TopicID string
+	GroupID uint64
 }
 
 type currentKey struct{}

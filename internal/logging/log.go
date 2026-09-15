@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -21,5 +22,19 @@ func New(level string) (*slog.Logger, error) {
 	default:
 		return nil, fmt.Errorf("unsupported LOG_LEVEL %q", level)
 	}
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slogLevel})), nil
+	return slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slogLevel})), nil
+}
+
+type contextKey struct{}
+
+// WithLogger carries correlation fields across the channel and shared runtime.
+func WithLogger(ctx context.Context, logger *slog.Logger) context.Context {
+	return context.WithValue(ctx, contextKey{}, logger)
+}
+
+func FromContext(ctx context.Context) *slog.Logger {
+	if logger, ok := ctx.Value(contextKey{}).(*slog.Logger); ok {
+		return logger
+	}
+	return slog.Default()
 }

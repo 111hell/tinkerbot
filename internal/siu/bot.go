@@ -2,6 +2,7 @@ package siu
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -23,6 +24,19 @@ func (c *Client) WhoAmI(ctx context.Context) (*Bot, error) {
 }
 
 func (c *Client) SetWebhook(ctx context.Context, webhookURL string) error {
-	var bot Bot
-	return c.post(ctx, "bot.update", map[string]string{"webhook_url": webhookURL}, &bot)
+	return c.post(ctx, "bot.update", map[string]string{"webhook_url": webhookURL}, nil)
+}
+
+type SendEventRequest struct {
+	UserID    uint64 `json:"user_id"`
+	EventType string `json:"event_type"`
+	TopicID   string `json:"topic_id,omitempty"`
+	Data      string `json:"data,omitempty"`
+}
+
+func (c *Client) SendEvent(ctx context.Context, request SendEventRequest) error {
+	if request.UserID == 0 || request.EventType == "" {
+		return fmt.Errorf("client event requires user_id and event_type")
+	}
+	return c.post(ctx, "bot.sendEvent", request, nil)
 }

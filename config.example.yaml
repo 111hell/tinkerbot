@@ -22,14 +22,19 @@ channels:
   - type: cli
     tools: []
   - type: siu
-    tools: [siu_list_messages, siu_search_contacts]
+    tools: [siu_list_messages, siu_search_contacts, siu_query_user]
+    # siu_search_contacts、siu_query_user 需要特权 Bot；query_user 空参数查询当前发言用户。
+    # 可追加：siu_search_chats（需要特权 Bot）。
+    # 可追加：siu_send_photo、siu_edit_message、siu_revoke_message、siu_send_event。
+    # 修改/发送类工具按需显式启用，目标由当前会话确定。
 
 # SIU 接入设置，仅启用 SIU 时使用
 siu:
-  base_url: "" # SIU 服务地址；也可填 "${SIU_BASE_URL}"。
+  receive_mode: webhook # webhook（默认）或 polling；本地连接 internal 使用 polling，无需监听端口。
+  base_url: "" # SIU 服务地址，可带 /api/v1；也可填 "${SIU_BASE_URL}"。
   bot_token: "" # SIU Bot 凭证；也可填 "${SIU_BOT_TOKEN}"。
-  webhook_url: "" # SIU 可访问的回调地址，含 /webhook；也可填 "${TINKERBOT_WEBHOOK_URL}"。
-listen_addr: ":8080"
+  webhook_url: "" # SIU 可访问的回调地址，含 /webhook；空值保留服务端配置。也可填 "${TINKERBOT_WEBHOOK_URL}"。
+listen_addr: ":8080" # 仅 webhook 使用；polling 可为空。
 
 # 共享历史、Skill 与日志
 sqlite:

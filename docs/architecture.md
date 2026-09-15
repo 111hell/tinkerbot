@@ -1,6 +1,6 @@
 # TinkerBot 架构说明
 
-对应 2026-09-06 当前工作区：一个共享 Tinker Agent，多个并发 channel，各自映射到独立 session。运行层不识别 CLI、SIU 或 Telegram，只接收 session ID、输入、运行 context 和事件回调。
+对应 2026-09-12 当前工作区：一个共享 Tinker Agent，多个并发 channel，各自映射到独立 session。运行层不识别 CLI、SIU 或 Telegram，只接收 session ID、输入、运行 context 和事件回调。
 
 ## 1. 整体架构
 
@@ -8,7 +8,7 @@
 flowchart TB
     subgraph Ingress["接入层：协议与能力配置"]
         CLI["CLI 适配器"] --> A["cli:default · tools=[]"]
-        SIU["SIU Webhook / 事件适配"] --> B["siu:TopicID · SIU 工具白名单"]
+        SIU["SIU Webhook 或 polling / 事件适配"] --> B["SIU 会话键 · 工具白名单"]
         TG["Telegram：尚未实现"] -.-> C["未来接入时映射 session ID"]
     end
     A --> Service["共享 chat.Service"]
@@ -33,12 +33,12 @@ CLI 和 SIU 不再分别构造 Agent。启动入口只创建一次模型、Agent
 | ------------ | ------------------------------------- | ----------------------------------------------- |
 | 组装         | `cmd/tinkerbot/main.go`             | 配置、模型、工具、Agent、存储及适配器组装       |
 | 接入         | `internal/channel/cli`              | stdin、stdout、命令和 CLI 会话 ID               |
-| 接入         | `internal/channel/siu`              | SIU 身份验证、Webhook 注册、HTTP 生命周期       |
-| SIU 适配     | `internal/events`、`internal/run` | 协议事件、Topic 调度、运行取消、消息交付        |
+| 接入         | `internal/channel/siu`              | SIU 身份验证、Webhook 或长轮询接收生命周期       |
+| SIU 适配     | `internal/events`、`internal/run` | 协议事件、会话调度、运行取消、消息交付        |
 | SIU 历史适配 | `internal/conversation`             | 将旧历史或 SIU 历史转换为通用消息，注入用户身份 |
 | 运行         | `internal/chat`                     | session 历史、单轮超时、同会话串行化            |
 | 工具能力     | `internal/toolscope`                | 从可信 context 读取启用列表，控制可见性与执行   |
-| 业务工具     | `internal/tools/siu`                | 当前用户消息和联系人查询                        |
+| 业务工具     | `internal/tools/siu`                | 查询、消息操作和客户端事件工具                        |
 | 存储         | `internal/storage`                  | SQLite 新 session 表及旧 SIU 表                 |
 | Agent SDK    | 本地 Tinker                           | 模型流、工具调用循环、通用消息与事件            |
 
@@ -57,7 +57,7 @@ flowchart TD
     Service --> Adapt["创建已配置适配器"]
     Adapt --> Run["RunAll 并发运行"]
     Run --> CLI["CLI 输入循环"]
-    Run --> SIU["SIU 身份验证、监听和 Webhook 服务"]
+    Run --> SIU["SIU 身份验证、Webhook 或 polling 接收"]
     CLI --> Exit["退出或失败：仅结束本渠道"]
     SIU --> Exit
     Signal["Ctrl-C / SIGTERM"] --> Cancel["取消父 context"]
@@ -96,7 +96,7 @@ sequenceDiagram
     S->>S: 释放 session 锁
 ```
 
-运行层将 session ID 当作不透明字符串。CLI 接入层使用 `cli:default`；SIU 接入层使用 `siu:<TopicID>`。命名空间避免渠道间会话碰撞，同一渠道的不同 Topic 也分别保存历史。
+运行层将 session ID 当作不透明字符串。CLI 接入层使用 `cli:default`；SIU 按 Topic 使用 `siu:<TopicID>`，无 Topic 私聊使用 `siu:user:<UserID>`，群聊使用 `siu:group:<GroupID>`。命名空间避免渠道间会话碰撞，同一渠道的不同 Topic 也分别保存历史。
 
 `Run`、`History`、`Initialize`、`Reset` 使用同一组 session 锁。同会话操作串行，不同会话可以并发；等待锁时可取消，锁无人持有或等待后回收。事件回调在锁内执行，不能重入同一 session 的运行服务。
 
@@ -128,7 +128,7 @@ flowchart TD
 | SIU`siu_search_contacts` | 当前 session 能看到此工具 | 当前用户联系人                       |
 | SIU 显式`tools: []`      | 无业务工具                | 即使模型构造工具名，也不能执行       |
 
-SIU 工具从接入层注入的 `UserID` / `TopicID` 读取业务身份，模型只能传入查询词和条数。给其他渠道添加 SIU 工具名称，不会自动赋予 SIU 用户身份；没有可信身份时工具报错。
+SIU 工具从接入层注入的 `UserID` / `TopicID` / `GroupID` 读取业务身份，模型只提供业务参数。新增查询和消息操作工具按配置启用；群聊隐藏并拒绝私聊数据工具。完整列表见 [Bot API 接入说明](siu-bot-api.md)。给其他渠道添加 SIU 工具名称，不会自动赋予 SIU 用户身份；没有可信身份时工具报错。
 
 工具过滤不修改共享注册表，context 内的启用列表独立复制，因此并发 session 不会互相改变工具范围。模型、系统提示词和 Skill 仍是共享配置；Skill 正文在启动时加入提示词，不负责授权。
 
@@ -153,32 +153,34 @@ Tinker 持有模型、系统提示词和工具实现，不持有跨轮 session �
 ```mermaid
 flowchart TD
     Hook["POST /webhook"] --> Dispatch["Dispatcher"]
-    Dispatch --> Manager["新消息取消同 Topic 旧运行"]
-    Dispatch --> Queue["按 Topic 排队"]
+    Dispatch --> Manager["入队成功后新消息取消同会话旧运行"]
+    Dispatch --> Queue["按会话排队"]
     Queue --> Ack["入队后可返回 HTTP 204"]
     Queue --> Handler["EventHandler"]
     Handler --> Seed["新 session 首次补充旧 SQLite 或 SIU 历史"]
     Seed --> Runtime["共享 chat.Service.Run"]
-    Runtime --> Stream["SIU 流式回复"]
+    Runtime --> Mode{"是否有 Topic 的私聊？"}
+    Mode -->|是| Stream["SIU 流式回复"]
+    Mode -->|否| Plain["累积正文后发送普通消息"]
     Stream --> Status{"流式发送结果"}
     Status -->|成功| Continue["继续运行"]
-    Status -->|普通错误| Accumulate["继续累积正文，标记回退"]
+    Status -->|普通错误| Accumulate["继续累积正文，停止分片"]
     Status -->|STREAM_CLOSED| Stop["提前结束，不补发"]
     Continue --> Complete["运行完成，运行层保存历史"]
     Accumulate --> Complete
-    Complete --> Finish["完成通知，或普通消息回退"]
+    Complete --> Finish["完成已有回复；无回复 ID 时发普通消息"]
 ```
 
 SIU 适配层继续保留以下协议行为：
 
-- 同 Topic 串行，跨 Topic 最多 8 个 Handler 并发；待处理事件最多 100 个，满时等待容量；空闲 lane 5 分钟回收。
-- 新消息取消同 Topic 活跃运行，排队旧消息通过最新消息检查跳过。取消不会影响 CLI 或其他 Topic 的 context。
-- `stop_responding` 取消运行；`skip_thinking` 只停止思考内容交付，不改变模型请求或正文运行。
+- 同会话串行，跨会话最多 8 个 Handler 并发；待处理事件最多 100 个，满时返回 503，控制事件仍可处理；空闲 lane 5 分钟回收。
+- 入队成功的新消息取消同会话活跃运行，排队旧消息通过最新消息检查跳过。取消不会影响 CLI 或其他会话的 context。
+- `stop_responding` 按用户消息 ID 取消运行，兼容停止先于消息到达；`skip_thinking` 按 Bot 回复 ID 只停止思考交付，不改变模型请求或正文运行。
 - `fork_topic` 导入初始消息；`delete_topic` 删除新 session 及对应旧历史。
-- 群消息、编辑消息、进入或离开聊天事件仍被忽略。
-- 流式发送普通错误时继续累积正文，再回退普通消息；流已关闭则停止补发。最终交付在历史保存之后。
+- 群聊、无 Topic 私聊使用普通回复；编辑事件使对应会话缓存失效，不触发新回复；未知事件忽略。
+- 流式发送普通错误时继续累积正文，有回复 ID 则完成原回复，无回复 ID 才发送普通消息；流已关闭则停止补发。完成失败记录错误，不另发重复消息。最终交付在历史保存之后。
 
-Webhook 204 表示事件分发完成，不表示模型回答完成。后台处理使用 Scheduler 的 context，不继承单次 Webhook 请求的取消。处理失败记录日志，不自动重试。
+Webhook 按 Event ID 做进程内有界去重；单个坏事件不会阻止同批后续控制事件。204 表示事件分发完成，不表示模型回答完成。后台处理使用 Scheduler 的 context，不继承单次 Webhook 请求的取消。处理失败记录日志，不自动重试。
 
 `internal/events`、`internal/conversation` 和 `internal/run` 是 SIU 适配实现的一部分；它们现在调用共享运行服务，不再直接构造或运行另一套 Agent。SIU 已统一使用全局提示词与 `agent.run_timeout`，原固定 30 分钟超时已移除。
 
@@ -189,7 +191,7 @@ Webhook 204 表示事件分发完成，不表示模型回答完成。后台处�
 | 项目         | 当前行为                                                                            |
 | ------------ | ----------------------------------------------------------------------------------- |
 | 新历史表     | `agent_sessions`，主键为 session ID，消息保存为 JSON                              |
-| 旧 SIU 表    | `conversations`，主键为原始 TopicID，仅用于兼容补充历史                           |
+| 旧 SIU 表    | `conversations`，主键为 SIU 会话键，兼容原始 TopicID，用于补充历史                           |
 | 旧数据导入   | 新 SIU session 不存在时读取旧历史；没有旧历史时查询 SIU，初始化时不覆盖已有 session |
 | 内存模式     | `sqlite.path: ""`，所有历史随进程退出清空                                         |
 | SQLite 模式  | 路径非空，所有 channel 的 session 都持久化；默认`tinkerbot.db`                    |
@@ -221,4 +223,14 @@ sqlite:
 
 关键代码：[组装入口](https://github.com/111hell/tinkerbot/blob/main/cmd/tinkerbot/main.go)、[共享运行服务](https://github.com/111hell/tinkerbot/blob/main/internal/chat/service.go)、[工具能力校验](https://github.com/111hell/tinkerbot/blob/main/internal/toolscope/scope.go)、[多渠道生命周期](https://github.com/111hell/tinkerbot/blob/main/internal/channel/run.go)、[SIU 适配器](https://github.com/111hell/tinkerbot/blob/main/internal/channel/siu/siu.go)。
 
-仓库不包含 `_test.go` 文件，使用 `go build ./...` 和 `go vet ./...` 进行构建与静态检查。真实模型或 SIU 服务仍需另行联调。Telegram 尚未实现，需要新增接入适配器、身份映射及渠道配置；共享运行层不需要增加 Telegram 分支。
+使用 `go test ./...` 和 `go test -race ./...` 验证本地协议与事件回归，使用 `go build ./...` 和 `go vet ./...` 进行构建与静态检查。真实模型或 SIU 服务仍需另行联调。Telegram 尚未实现，需要新增接入适配器、身份映射及渠道配置；共享运行层不需要增加 Telegram 分支。
+
+### SIU polling 接收
+
+`siu.receive_mode` 省略或为 `webhook` 时保留原来的监听和可选注册行为；设为 `polling` 时，`Channel.Run → poll → Client.GetUpdates → Dispatcher → Scheduler → EventHandler`，不监听端口、不调用 `bot.update`。两条接收路径共享同一套会话、回复及控制逻辑。
+
+polling 每次最多取 30 条、等待 30 秒，HTTP 客户端超时 40 秒；失败后等待 3 秒重试，context 取消会中断 HTTP 和退避等待。调度器满时在本地保留普通事件并按序重试，长轮询暂降至 1 秒，继续接收停止、跳过思考和删除 Topic。删除会立即取消运行并作废该 Topic 尚未入队的旧事件，清理任务仍需入队。接收待入队缓冲上限为 1000；达到上限会报错停止 SIU 渠道，避免无限占用内存。它不是持久队列，异常退出时未完成事件不能保证恢复。
+
+消费契约和模式切换见 [SIU Bot 接入说明](siu-bot-api.md#polling-消费语义与模式切换)。
+
+polling 把事件视为即时通知：进入接收循环时记录一次本地毫秒时间，所有批次都只将 SIU 时间戳严格晚于该边界的事件交给 Dispatcher；更早、同毫秒、无时间戳的事件取出后直接丢弃。首次、反复切换和正常重启采用相同策略，停机消息不补处理。边界仅存在内存，不保存模式或接收进度；依赖两端时钟一致，不代表精确去重或可靠确认。在线请求失败重试时沿用边界，因此进程未退出期间产生的事件仍可处理。

@@ -2,9 +2,7 @@ package siu
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -24,25 +22,19 @@ type searchContactsResult struct {
 }
 
 func NewSearchContacts(client *siuc.Client) agent.Tool {
-	return agent.Tool{
-		Name:        SearchContactsName,
-		Description: "Search the current private-chat user's SIU contacts by name, alias, remark, or username and return matching user profiles.",
-		InputSchema: `{"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer"}},"required":["query"],"additionalProperties":false}`,
-		Execute: func(ctx context.Context, arguments string) (string, error) {
-			var args searchContactsArgs
-			if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-				return "", err
-			}
-			current, ok := conversation.FromContext(ctx)
-			if !ok {
-				return "", errors.New("current SIU conversation is unavailable")
+	return newTool(SearchContactsName,
+		"Find other people in the current private-chat user's SIU contacts by name, alias, remark or username (e.g. 找一下小王). Returns matching contacts; an empty result means no matching contacts. For 我是谁 / 我的资料 use siu_query_user with self=true, not this search. For an exact known user ID or username, query_user can retrieve a basic profile directly. Requires a privileged Bot.",
+		`{"type":"object","properties":{"query":{"type":"string","description":"Nonempty name, alias, remark or username of another person; at most 255 characters."},"limit":{"type":"integer","minimum":1,"maximum":100,"description":"Maximum contacts, default 20, at most 100."}},"required":["query"],"additionalProperties":false}`,
+		func(ctx context.Context, current conversation.Current, args searchContactsArgs) (any, error) {
+			if err := requirePrivate(current); err != nil {
+				return nil, err
 			}
 			args.Query = strings.TrimSpace(args.Query)
 			if args.Query == "" {
-				return "", errors.New("contact search query is required")
+				return nil, errors.New("contact search query is required")
 			}
 			if utf8.RuneCountInString(args.Query) > 255 {
-				return "", errors.New("contact search query must be at most 255 characters")
+				return nil, errors.New("contact search query must be at most 255 characters")
 			}
 			if args.Limit <= 0 {
 				args.Limit = 20
@@ -56,10 +48,8 @@ func NewSearchContacts(client *siuc.Client) agent.Tool {
 				Limit:  uint32(args.Limit),
 			})
 			if err != nil {
-				return "", fmt.Errorf("search SIU contacts: %w", err)
+				return nil, err
 			}
-			output, err := json.Marshal(searchContactsResult{Contacts: response.Results})
-			return string(output), err
-		},
-	}
+			return searchContactsResult{Contacts: response.Results}, nil
+		})
 }

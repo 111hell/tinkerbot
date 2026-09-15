@@ -14,6 +14,8 @@ import (
 const (
 	ChannelCLI = "cli"
 	ChannelSIU = "siu"
+	SIUWebhook = "webhook"
+	SIUPolling = "polling"
 )
 
 type Config struct {
@@ -94,8 +96,17 @@ func (c *Config) Validate() error {
 		switch ch.Type {
 		case ChannelCLI:
 		case ChannelSIU:
-			if strings.TrimSpace(c.ListenAddr) == "" {
-				return fmt.Errorf("listen_addr is required for siu channel")
+			switch c.SIU.ReceiveMode {
+			case "", SIUWebhook:
+				if strings.TrimSpace(c.ListenAddr) == "" {
+					return fmt.Errorf("listen_addr is required for siu webhook mode")
+				}
+			case SIUPolling:
+				if strings.TrimSpace(c.SIU.WebhookURL) != "" {
+					return fmt.Errorf("siu.webhook_url must be empty in polling mode; clear any server webhook separately")
+				}
+			default:
+				return fmt.Errorf("unsupported siu.receive_mode %q (available: webhook, polling)", c.SIU.ReceiveMode)
 			}
 		default:
 			return fmt.Errorf("unsupported channel %q (available: cli, siu)", ch.Type)
@@ -139,9 +150,10 @@ type ModelConfig struct {
 }
 
 type SIUConfig struct {
-	BaseURL    string `yaml:"base_url"`
-	BotToken   string `yaml:"bot_token"`
-	WebhookURL string `yaml:"webhook_url"`
+	ReceiveMode string `yaml:"receive_mode"`
+	BaseURL     string `yaml:"base_url"`
+	BotToken    string `yaml:"bot_token"`
+	WebhookURL  string `yaml:"webhook_url"`
 }
 
 type SQLiteConfig struct {
