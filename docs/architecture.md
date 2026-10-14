@@ -4,7 +4,7 @@
 
 ## 当前 Agent 能力与边界
 
-下表依据本项目及相邻 `../tinker` 工作区的实际调用链整理。代码接入不等于已通过真实模型、SIU 或 AnySearch 服务联调。
+下表依据本项目及固定版本 Tinker 的实际调用链整理。代码接入不等于已通过真实模型、SIU 或 AnySearch 服务联调。
 
 | 能力 | 当前实现 | 条件与边界 |
 | --- | --- | --- |
@@ -15,7 +15,7 @@
 | 联网查询 | `web_search` 搜索，`web_visit` 提取网页正文 | AnySearch 后端、可选 API key；没有交互浏览器；响应最多 2 MiB，模型内容最多 24000 个 Unicode 字符 |
 | SIU 查询 | 当前 Topic 消息、联系人、聊天搜索、用户资料 | 按工具配置启用；部分接口需要特权 Bot；群聊禁用私聊数据工具 |
 | SIU 操作 | 发送已有图片；可选编辑、撤回、客户端事件 | 不生成图片；当前图片工具缺省填 800×600，并未读取真实尺寸；事件提交不等于客户端执行完成 |
-| 图片输入 | SIU 当前消息、远端历史与 Fork 的图片 URL 作为多模态输入 | 依赖相邻 Tinker 改动、模型视觉支持及 URL 可访问性；没有独立 OCR 工具 |
+| 图片输入 | SIU 当前消息、远端历史与 Fork 的图片 URL 作为多模态输入 | 依赖 Tinker 的图片消息支持、模型视觉支持及 URL 可访问性；没有独立 OCR 工具 |
 | 文件正文 | PDF、DOCX、PPTX、XLSX、UTF-8 CSV / TXT 提取 | 需要 `uv`、预装 MarkItDown 依赖并从项目目录启动；每消息最多 5 文件、单文件 20 MiB、总下载 50 MiB、正文 64 KiB；历史文件不重新提取 |
 | Skill | 有 description 的 Skill 先列目录，通过 `load_skill` 读取；其余全文注入 | 提供指令，不自动提供 shell、文件操作或执行环境；不负责业务授权 |
 | 运行控制 | 超时、最多工具调用数、用户停止、Topic 分叉/删除、失败提示 | `max_steps` 未配置或为 0 时按 20 次工具调用；文件预处理目前不计入 `agent.run_timeout` |
@@ -63,7 +63,7 @@ CLI 和 SIU 不再分别构造 Agent。启动入口只创建一次模型、Agent
 | 存储         | `internal/storage`                  | SQLite 新 session 表及旧 SIU 表                 |
 | Agent SDK    | 本地 Tinker                           | 模型流、工具调用循环、通用消息与事件            |
 
-本地依赖为 `replace github.com/111hell/tinker => ../tinker`，要求将 Tinker 放在本项目的相邻目录。运行层与渠道适配在本项目中实现。
+`go.mod` 固定依赖 `github.com/111hell/tinker v0.0.0-20261014032619-c7acbed1e613`，由 Go 自动下载，不依赖相邻目录。该伪版本由提交时间和提交 ID 确定，保证构建使用同一份依赖代码。运行层与渠道适配在本项目中实现。需要同时修改 Tinker 时，可在本地通过不提交的 `go.work` 组合两个模块，保持发布用 `go.mod` 的远端版本依赖。
 
 ## 2. 启动与多渠道生命周期
 
@@ -207,7 +207,7 @@ Webhook 按 Event ID 做进程内有界去重；单个坏事件不会阻止同�
 
 文件输入在 `EventHandler.runAgent → conversation.AttachmentReader → Client.DownloadMedia → document.Converter` 中提取，然后作为文本交给共享运行层。转换器调用固定版本的离线 MarkItDown 脚本，临时原件转换后删除；下载/转换均可随当前运行取消。每消息最多 5 个文件、正文输入总量 64 KiB，失败和截断会显式标记。该路径位于调度后的 Topic 运行中，Webhook 和 polling 共用；没有引入 smolmem 或独立文档存储。图片附件走 Tinker 多模态 URL 输入；初始化历史不提取旧文件正文，详见 [文件正文读取](siu-bot-api.md#文件正文读取)。
 
-Tinker 的 `c7acbed` 已增加图片消息与 reasoning 字段映射；本项目要求相邻 Tinker 包含该提交。SIU 思考内容交付仍要求供应商实际返回对应字段，且运行时收到 `Delta.Reasoning`。
+固定依赖的 Tinker `c7acbed` 已增加图片消息与 reasoning 字段映射。SIU 思考内容交付仍要求供应商实际返回对应字段，且运行时收到 `Delta.Reasoning`。
 
 ## 7. 存储、配置与兼容
 

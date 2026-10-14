@@ -8,7 +8,7 @@ TinkerBot is a single-bot application built on [Tinker](https://github.com/111he
 
 ## Quick Start
 
-Requires Go 1.27+ and a sibling Tinker checkout at `../tinker`.
+Requires Go 1.27+. Go downloads the pinned Tinker module automatically; no sibling checkout is needed.
 
 ```sh
 cp config.example.yaml config.yaml

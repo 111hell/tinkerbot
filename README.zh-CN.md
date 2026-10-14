@@ -10,7 +10,7 @@ TinkerBot 是一个基于 [Tinker](https://github.com/111hell/tinker) 的单 Bot
 
 ## 快速开始
 
-需要 Go 1.27+，以及相邻目录中的 Tinker：`../tinker`。
+需要 Go 1.27+。Go 会自动下载固定版本的 Tinker 模块，无需准备相邻目录。
 
 ```sh
 cp config.example.yaml config.yaml
