@@ -66,7 +66,7 @@ func (s *Service) ImportFork(ctx context.Context, key Key, messages []*siu.Messa
 	history := make([]agent.Message, 0, len(messages))
 	for _, message := range messages {
 		if message != nil {
-			history = append(history, historyMessage(key, message.UserID, MessageText(message.Text, message.Attachment)))
+			history = append(history, historyMessage(key, message.UserID, MessageText(message.Text, message.Attachment), ImageURLs(message.Attachment)...))
 		}
 	}
 	return s.SaveHistory(ctx, key, history)
@@ -89,17 +89,21 @@ func toAgentHistory(key Key, newestFirst []*siu.HistoryMessage, currentMessageID
 		if message == nil || message.DeletedAt != nil || message.TopicID != key.TopicID {
 			continue
 		}
-		messages = append(messages, historyMessage(key, message.FromUserID, MessageText(message.Text, message.Attachment)))
+		messages = append(messages, historyMessage(key, message.FromUserID, MessageText(message.Text, message.Attachment), ImageURLs(message.Attachment)...))
 	}
 	return messages
 }
 
-func historyMessage(key Key, fromUserID uint64, text string) agent.Message {
+func historyMessage(key Key, fromUserID uint64, text string, imageURLs ...string) agent.Message {
 	role := agent.AssistantRole
 	if fromUserID == key.UserID {
 		role = agent.UserRole
 	}
-	return agent.Message{Role: role, Text: text}
+	msg := agent.Message{Role: role, Text: text}
+	if role == agent.UserRole && len(imageURLs) > 0 {
+		msg.ImageURLs = imageURLs
+	}
+	return msg
 }
 
 func (s *Service) DeleteTopic(ctx context.Context, topicID string) error {

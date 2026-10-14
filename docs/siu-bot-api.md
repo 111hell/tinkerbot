@@ -96,11 +96,39 @@ TinkerBot 默认合并正文和模型返回的 reasoning：累计 48 个 Unicode
 - `stop_responding` 按用户消息 ID 停止对应运行，之后不再发送或完成回复；记录保留五分钟，处理停止事件先于用户消息到达的情况。
 - `skip_thinking` 按 Bot 回复消息 ID 停止 reasoning 交付，正文继续；也处理事件早于首片 HTTP 响应返回的情况，不影响同 Topic 中的其他回复。
 - `fork_topic` 依据复制后的消息建立新 Topic 上下文；`delete_topic` 取消运行并清理上下文。编辑事件不触发新回复，按会话串行使缓存失效，下一次私聊从 SIU 重新加载。
-- 图片、视频、文件和文件组使用类型化附件；文档未定义内部结构的语音、自定义附件保留原始 JSON。当前 Tinker 输入为文本，模型收到的是附件元数据和 URL，尚不具备图片理解、语音转写或文件正文读取能力。
+- 图片、视频、文件和文件组使用类型化附件；文档未定义内部结构的语音、自定义附件保留原始 JSON。文件和文件组会提取支持格式的正文（见下节）；图片 URL 会作为多模态输入发送，能否理解取决于模型支持及 URL 可访问性。音视频仍仅传元数据，不提供语音转写或视频理解。
 
 Webhook 接收 `Event[]`，入队后返回 204，模型在后台处理。进程内保留最近 4096 个事件 ID 去重；未知事件被忽略，单个坏事件不阻止同批其他事件。最多同时处理 8 个会话、等待 100 个事件；队列满返回 503，控制事件仍可处理。SIU 不主动重试 Webhook，因此这不是持久队列，也不承诺必达或跨重启去重。
 
 同会话新消息取消旧运行。首次加载私聊最多读取最近 100 条；群聊仅有本应用收到的历史，编辑使群聊缓存重置。若首片失败且没有已知回复 ID，会回退普通消息；已有回复时用完整正文完成原回复。完成结果不确定时记录错误，不另发一条重复消息。
+
+## 文件正文读取
+
+已移植 Agentiu 的格式识别、MarkItDown 包装脚本、限额下载和有界子进程处理。文字解析本身只使用 Go 标准库和公开的 [Microsoft MarkItDown](https://github.com/microsoft/markitdown)，没有导入 Agentiu 或 smolmem 模块。Agentiu 的长期文档存储、搜索和 `read_document` 依赖另一条 smolmem 链路，本项目不包含这些能力。
+
+首次安装依赖（要求 PATH 中有 uv，Python >=3.13；脚本固定 MarkItDown 0.1.7）：
+
+```sh
+cd /Users/janeshirley/proj/myagent
+uv run --script scripts/convert-document.py --check
+go run ./cmd/tinkerbot -config config.yaml -channel siu
+```
+
+无需修改 YAML 或工具白名单。运行时使用 `uv run --offline --no-python-downloads`，不会因收到附件临时联网安装依赖。应从项目目录启动，部署时一并携带 `scripts/convert-document.py`；依赖或脚本缺失时该文件会明确标记读取失败，普通文字对话仍可用。
+
+- 输入：`file`、`file_stack`；支持有文本的 PDF、DOCX、PPTX、XLSX、UTF-8 CSV/TXT。格式按文件字节识别，不相信扩展名；普通文本只接受 TXT/CSV，CSV 拒绝字段数量不一致的行。
+- 限制：每条消息最多 5 个文件，每个 20 MiB、成功下载总量 50 MiB；下载和转换各最多 30 秒，单个转换输出最多 2 MiB。Office ZIP 声明解压大小超过 100 MiB 时拒绝。
+- 模型输入：每条消息累计最多包含 64 KiB 文件正文，按附件顺序分配；超出时给出 `truncated`、已包含字节数和全文字节数。没有分页工具，不能声称截断文件已完整读取；可请用户拆分或提供所需章节。
+- 生命周期：在对应 Topic 的运行 context 内下载和转换，不占用 polling 接收循环；stop、Topic 删除或新消息取消旧运行时中断。临时原件使用独立私有目录，转换结束即删除。已经加入模型输入的文本沿用现有 session 历史保存与清理语义；历史回填不会重新下载旧附件。
+- 失败：下载失败、不支持、加密/损坏、无可提取文本等均在输入中明确标注；单个文件失败不阻止同批其他文件。下载不附带 Bot Token，错误不输出签名 URL。附件正文标记为用户提供的资料，不作为系统指令。
+- 文件转换不包含 OCR、文档内图片内容理解、语音转写、视频理解、旧版 DOC/XLS 或独立文档库。直接图片附件走独立的多模态输入路径。Excel 转换是文本/表格提取，不执行公式重算，也不保证图表或版式语义。
+
+`go test -race ./...` 检查现有 Go 测试；当前 `internal/document` 没有转换测试，不能据此声称真实格式已验证。可生成隔离样本，并逐个交给转换脚本检查输出：
+
+```sh
+uv run --script internal/document/testdata/generate.py /tmp/tinkerbot-document-fixtures
+uv run --offline --no-python-downloads --script scripts/convert-document.py /tmp/tinkerbot-document-fixtures/proof.pdf
+```
 
 ## 验证
 

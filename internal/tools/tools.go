@@ -5,6 +5,7 @@ import (
 
 	"github.com/111hell/tinkerbot/internal/siu"
 	siutools "github.com/111hell/tinkerbot/internal/tools/siu"
+	webtools "github.com/111hell/tinkerbot/internal/tools/web"
 )
 
 type definition struct {
@@ -24,11 +25,17 @@ var siuTools = []definition{
 	{name: siutools.SendEventName, new: siutools.NewSendEvent, privateOnly: true},
 }
 
+const LoadSkillName = "load_skill"
+
 // ForSIUGroup hides private-chat tools from the model. Each tool also checks
 // its trusted context when executed, so filtering alone is not authorization.
 func ForSIUGroup(names []string) []string {
 	var enabled []string
 	for _, name := range names {
+		if name == webtools.SearchName || name == webtools.VisitName || name == LoadSkillName {
+			enabled = append(enabled, name)
+			continue
+		}
 		for _, tool := range siuTools {
 			if tool.name == name && !tool.privateOnly {
 				enabled = append(enabled, name)
@@ -39,10 +46,19 @@ func ForSIUGroup(names []string) []string {
 }
 
 func DefaultSIUNames() []string {
-	return []string{siutools.ListMessagesName, siutools.SearchContactsName, siutools.QueryUserName}
+	return []string{
+		siutools.ListMessagesName,
+		siutools.SearchContactsName,
+		siutools.SearchChatsName,
+		siutools.QueryUserName,
+		siutools.SendPhotoName,
+	}
 }
 
 func IsKnown(name string) bool {
+	if name == webtools.SearchName || name == webtools.VisitName || name == LoadSkillName {
+		return true
+	}
 	for _, tool := range siuTools {
 		if tool.name == name {
 			return true

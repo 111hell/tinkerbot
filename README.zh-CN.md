@@ -1,5 +1,7 @@
 # TinkerBot
 
+SIU 文件附件现支持 PDF、DOCX、PPTX、XLSX、UTF-8 CSV/TXT 正文提取。先运行 `uv run --script scripts/convert-document.py --check` 安装公开依赖，再从项目目录启动；无需新增配置。图片 URL 已接入多模态输入，实际理解能力取决于模型支持及 URL 可访问性；音视频和 OCR 尚未接入。限额及截断规则见 [文件正文读取](docs/siu-bot-api.md#文件正文读取)，完整能力与边界见 [架构说明](docs/architecture.md#当前-agent-能力与边界)。
+
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 > 在终端和 SIU 聊天中运行同一个 AI 助手。
@@ -20,6 +22,8 @@ go run ./cmd/tinkerbot -channel cli
 
 - **可扩展渠道**：围绕共享 Agent 运行时接入更多渠道；当前内置 CLI 和 SIU。
 - **持久化会话**：使用本地 SQLite 保存独立会话，重启后继续使用。
+- **联网查询**：`web_search` 搜索公开网页，`web_visit` 读取网页正文，CLI、SIU 私聊和群聊均可用。模板已启用；旧配置将全局 `tools` 设为 `[web_search, web_visit]` 后重启。基于 AnySearch，支持匿名调用；可通过 `web.api_key` 配置密钥。查询词和 URL 会发给该服务，服务不可用时会返回失败；网页访问不支持交互操作。
+- **自然交互**：普通问候和自我介绍直接回应；只有任务需要时才查询 SIU 资料，默认不向用户展开内部权限或接口细节。
 - **Skill 与工具**：加载 `SKILL.md` Skill，并按全局或渠道配置工具。
 - **SIU 助手能力**：支持私聊、群聊、Topic 流式回复和停止/分叉；按需启用联系人、聊天搜索、用户查询、图片发送、编辑/撤回和客户端事件工具。
 

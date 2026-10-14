@@ -20,6 +20,8 @@ go run ./cmd/tinkerbot -channel cli
 
 - **Extensible channels** — add channel adapters around the shared agent runtime; CLI and SIU are included.
 - **Persistent conversations** — keep separate chat histories in local SQLite across restarts.
+- **Web research** — `web_search` searches public pages and `web_visit` extracts page text through AnySearch in CLI, SIU private chats and groups. Enabled in the template; for existing configs, set global `tools: [web_search, web_visit]` and restart. Anonymous access is supported; optionally set `web.api_key`. Queries and URLs are sent to AnySearch, and service failures are reported. Page visits do not support browser interactions.
+- **Natural conversation** — greetings and self-introductions receive direct replies; SIU profile lookup is used only when the task needs it, with concise explanations of relevant failures.
 - **Skills and tools** — load `SKILL.md` Skills and configure tools globally or per channel.
 - **SIU-aware assistance** — private and group chats, Topic streaming, stop, skip, and forks; configurable tools for contacts, chat search, user profiles, images, message editing/revocation, and client events.
 
@@ -46,6 +48,8 @@ jq -c 'select(.message_id == "YOUR_MESSAGE_ID")' /tmp/tinkerbot/bot.jsonl
 The last stage helps identify whether the bot is waiting for the model, executing a tool, or sending a reply. `agent generation completed` means generation ended; `SIU reply delivered` means the delivery API succeeded.
 
 ## Local SIU access with long polling
+
+SIU file attachments support text extraction from PDF, DOCX, PPTX, XLSX and UTF-8 CSV/TXT. Install the public, pinned converter with `uv run --script scripts/convert-document.py --check`, then start from the project directory. No additional YAML settings or private libraries are needed. Image URLs are passed as multimodal input; understanding depends on model support and URL accessibility. Audio, video and OCR remain unsupported. See [file limits and setup](docs/siu-bot-api.md#文件正文读取) and the [capability overview](docs/architecture.md#当前-agent-能力与边界).
 
 Set these fields in your own `config.yaml`, preserving your model, tools, and storage settings:
 

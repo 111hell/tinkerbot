@@ -27,6 +27,7 @@ import (
 	"github.com/111hell/tinkerbot/internal/skills"
 	"github.com/111hell/tinkerbot/internal/storage"
 	"github.com/111hell/tinkerbot/internal/tools"
+	webtools "github.com/111hell/tinkerbot/internal/tools/web"
 	"github.com/111hell/tinkerbot/internal/toolscope"
 )
 
@@ -109,19 +110,44 @@ func runMain(ctx context.Context, args []string, input io.ReadCloser, output, di
 	if err != nil {
 		return err
 	}
-	var loaded []agent.Skill
+	var legacySkills []agent.Skill
+	var skillCatalog string
+	var skillTool *agent.Tool
 	if cfg.SkillsDir != "" {
-		loaded, err = skills.Load(cfg.SkillsDir)
+		defs, err := skills.LoadDefinitions(cfg.SkillsDir)
 		if err != nil {
 			return err
 		}
+		var progressive []skills.Definition
+		for _, d := range defs {
+			if d.Description != "" {
+				progressive = append(progressive, d)
+			} else {
+				legacySkills = append(legacySkills, agent.Skill{Name: d.Name, Instructions: d.Instructions})
+			}
+		}
+		if len(progressive) > 0 {
+			skillCatalog = skills.Catalog(progressive)
+			t := skills.NewLoadSkillTool(progressive)
+			skillTool = &t
+		}
 	}
-	var registered []agent.Tool
+	registered := webtools.NewClient(cfg.Web.APIKey).Tools()
 	if client != nil {
-		registered = toolscope.Guard(tools.All(client))
+		registered = append(registered, tools.All(client)...)
 	}
+	if skillTool != nil {
+		registered = append(registered, *skillTool)
+	}
+	registered = toolscope.Guard(registered)
+
+	sysPrompt := config.AssistantPrompt + "\n\n" + cfg.Agent.SystemPrompt
+	if skillCatalog != "" {
+		sysPrompt += "\n\n" + skillCatalog
+	}
+
 	runtime, err := agent.New(agent.Config{
-		Model: toolscope.Model{Model: model}, SystemPrompt: cfg.Agent.SystemPrompt, Skills: loaded, Tools: registered,
+		Model: toolscope.Model{Model: model}, SystemPrompt: sysPrompt, Skills: legacySkills, Tools: registered,
 	})
 	if err != nil {
 		return err
@@ -137,7 +163,11 @@ func runMain(ctx context.Context, args []string, input io.ReadCloser, output, di
 		store = db.Sessions()
 		legacyStore = db
 	}
-	sessions := chat.NewService(runtime, cfg.Agent.RunTimeout, store)
+	sessions := chat.NewService(runtime, cfg.Agent.RunTimeout, store,
+		chat.WithMaxHistoryMessages(cfg.Agent.MaxHistoryMessages),
+		chat.WithMaxSteps(cfg.Agent.MaxSteps),
+		chat.WithMemoryCompaction(true),
+	)
 	var transports []channel.Channel
 	for _, ch := range cfg.EnabledChannels() {
 		switch ch.Type {

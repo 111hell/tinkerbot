@@ -14,19 +14,23 @@ model:
 agent:
   system_prompt: "You are a helpful assistant. Answer concisely, use enabled tools when relevant, and never invent data."
   run_timeout: 2m
+  max_steps: 20 # 单轮执行最大工具调用步数，防止模型陷入死循环；默认 20。
+  max_history_messages: 30 # 会话历史滑动窗口最大消息数，防止上下文溢出；0 表示不裁剪，默认 30。
 
-tools: [] # 全局通用工具；与渠道 tools 合并。
+tools: [web_search, web_visit] # 通用联网工具；与渠道 tools 合并。
+
+web:
+  api_key: "" # AnySearch 支持匿名调用；可填 "${ANYSEARCH_API_KEY}"。
 
 # 启用的渠道与追加工具
 channels:
   - type: cli
     tools: []
   - type: siu
-    tools: [siu_list_messages, siu_search_contacts, siu_query_user]
-    # siu_search_contacts、siu_query_user 需要特权 Bot；query_user 空参数查询当前发言用户。
-    # 可追加：siu_search_chats（需要特权 Bot）。
-    # 可追加：siu_send_photo、siu_edit_message、siu_revoke_message、siu_send_event。
-    # 修改/发送类工具按需显式启用，目标由当前会话确定。
+    # 默认全能工具套件：包含历史消息、联系人、跨会话搜索、用户信息查询及图文发送
+    tools: [siu_list_messages, siu_search_contacts, siu_search_chats, siu_query_user, siu_send_photo]
+    # search_contacts、search_chats、query_user 需要特权 Bot；query_user 空参数自动查询当前发言用户。
+    # 可按需追加敏感操作工具：siu_edit_message（编辑消息）、siu_revoke_message（撤回消息）、siu_send_event（客户端事件）。
 
 # SIU 接入设置，仅启用 SIU 时使用
 siu:

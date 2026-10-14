@@ -23,7 +23,7 @@ type searchContactsResult struct {
 
 func NewSearchContacts(client *siuc.Client) agent.Tool {
 	return newTool(SearchContactsName,
-		"Find other people in the current private-chat user's SIU contacts by name, alias, remark or username (e.g. 找一下小王). Returns matching contacts; an empty result means no matching contacts. For 我是谁 / 我的资料 use siu_query_user with self=true, not this search. For an exact known user ID or username, query_user can retrieve a basic profile directly. Requires a privileged Bot.",
+		"Find other people in the current private-chat user's SIU contacts by name, alias, remark or username (e.g. 找一下小王). Returns matching contacts; an empty result means no matching contacts. For an explicit request to retrieve the current speaker's SIU profile, use siu_query_user with self=true. Greetings and self-introductions do not need a lookup. For an exact known user ID or username, query_user can retrieve a basic profile directly. Requires a privileged Bot.",
 		`{"type":"object","properties":{"query":{"type":"string","description":"Nonempty name, alias, remark or username of another person; at most 255 characters."},"limit":{"type":"integer","minimum":1,"maximum":100,"description":"Maximum contacts, default 20, at most 100."}},"required":["query"],"additionalProperties":false}`,
 		func(ctx context.Context, current conversation.Current, args searchContactsArgs) (any, error) {
 			if err := requirePrivate(current); err != nil {

@@ -12,6 +12,7 @@ import (
 	"github.com/111hell/tinkerbot/internal/chat"
 	"github.com/111hell/tinkerbot/internal/config"
 	"github.com/111hell/tinkerbot/internal/conversation"
+	"github.com/111hell/tinkerbot/internal/document"
 	"github.com/111hell/tinkerbot/internal/events"
 	"github.com/111hell/tinkerbot/internal/run"
 	siuapi "github.com/111hell/tinkerbot/internal/siu"
@@ -53,6 +54,11 @@ func (c *Channel) Run(ctx context.Context) error {
 	runs := run.NewManager()
 	conversations := conversation.NewService(c.store, c.client)
 	handler := events.NewHandler(c.logger, conversations, runs, c.sessions, c.client, c.tools, bot.ID)
+	converter, err := document.New("scripts/convert-document.py")
+	if err != nil {
+		return err
+	}
+	handler.SetAttachmentReader(conversation.NewAttachmentReader(c.client, converter))
 	scheduler := events.NewScheduler(ctx, handler, 8, 100, 5*time.Minute)
 	defer scheduler.Close()
 	dispatcher := events.NewDispatcher(runs, scheduler, bot.ID)

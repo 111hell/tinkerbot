@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,6 +30,11 @@ type Config struct {
 	ListenAddr string          `yaml:"listen_addr"`
 	SkillsDir  string          `yaml:"skills_dir"`
 	LogLevel   string          `yaml:"log_level"`
+	Web        WebConfig       `yaml:"web"`
+}
+
+type WebConfig struct {
+	APIKey string `yaml:"api_key"`
 }
 
 type ChannelConfig struct {
@@ -37,17 +43,23 @@ type ChannelConfig struct {
 }
 
 // EnabledTools combines global and channel tools. When neither is configured,
-// it falls back to the legacy channel defaults.
+// it enables web tools plus the channel defaults.
 func (c *Config) EnabledTools(ch ChannelConfig) []string {
+	var base []string
 	if c.Tools == nil && ch.Tools == nil {
 		switch ch.Type {
 		case ChannelSIU:
-			return tools.DefaultSIUNames()
+			base = mergeTools([]string{"web_search", "web_visit"}, tools.DefaultSIUNames())
 		default:
-			return nil
+			base = []string{"web_search", "web_visit"}
 		}
+	} else {
+		base = mergeTools(c.Tools, ch.Tools)
 	}
-	return mergeTools(c.Tools, ch.Tools)
+	if strings.TrimSpace(c.SkillsDir) != "" && !slices.Contains(base, tools.LoadSkillName) {
+		base = append(base, tools.LoadSkillName)
+	}
+	return base
 }
 
 func mergeTools(lists ...[]string) []string {
@@ -76,8 +88,10 @@ func (c *Config) EnabledChannels() []ChannelConfig {
 }
 
 type AgentConfig struct {
-	SystemPrompt string        `yaml:"system_prompt"`
-	RunTimeout   time.Duration `yaml:"run_timeout"`
+	SystemPrompt       string        `yaml:"system_prompt"`
+	RunTimeout         time.Duration `yaml:"run_timeout"`
+	MaxSteps           int           `yaml:"max_steps"`
+	MaxHistoryMessages int           `yaml:"max_history_messages"`
 }
 
 func (c *Config) Validate() error {
@@ -121,6 +135,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Agent.RunTimeout <= 0 {
 		return fmt.Errorf("agent.run_timeout must be positive")
+	}
+	if c.Agent.MaxSteps < 0 {
+		return fmt.Errorf("agent.max_steps cannot be negative")
+	}
+	if c.Agent.MaxHistoryMessages < 0 {
+		return fmt.Errorf("agent.max_history_messages cannot be negative")
 	}
 	if strings.TrimSpace(c.Model.BaseURL) == "" {
 		return fmt.Errorf("model.base_url is required")

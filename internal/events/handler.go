@@ -35,6 +35,11 @@ type EventHandler struct {
 	tools         []string
 	replies       ReplySender
 	botID         uint64
+	attachments   *conversation.AttachmentReader
+}
+
+func (h *EventHandler) SetAttachmentReader(reader *conversation.AttachmentReader) {
+	h.attachments = reader
 }
 
 func NewHandler(logger *slog.Logger, conversations *conversation.Service, runs *run.Manager, sessions *chat.Service, replies ReplySender, tools []string, botID uint64) *EventHandler {
@@ -148,6 +153,13 @@ func (h *EventHandler) runAgent(handle run.Handle, key conversation.Key, message
 	var reasoning richReasoning
 	canStream := key.TopicID != "" && key.GroupID == 0
 	input := conversation.MessageText(message.Text, message.Attachment)
+	if h.attachments != nil {
+		var err error
+		input, err = h.attachments.ReadMessage(ctx, message.Text, message.Attachment)
+		if err != nil {
+			return err
+		}
+	}
 	if key.GroupID != 0 {
 		input = fmt.Sprintf("[SIU group sender user_id=%d]\n%s", message.UserID, input)
 	}
@@ -206,24 +218,37 @@ func (h *EventHandler) runAgent(handle run.Handle, key conversation.Key, message
 		index++
 		return nil
 	}}
-	err := h.sessions.Run(ctx, sessionID(key.ID()), input, buffer.accept)
+	imageURLs := conversation.ImageURLs(message.Attachment)
+	userMsg := agent.UserImageMessage(input, imageURLs...)
+	err := h.sessions.RunMessage(ctx, sessionID(key.ID()), userMsg, buffer.accept)
 	if errors.Is(err, errStreamClosed) {
 		logger.InfoContext(ctx, "SIU reply stream closed", "reply_message_id", streamID)
 		return nil
 	}
-	if err != nil {
-		return fmt.Errorf("run session: %w", err)
-	}
+	runErr := err
 	if err := handle.Context.Err(); err != nil {
 		return err
 	}
 
 	answer := full.String()
-	if answer == "" {
-		return errors.New("agent returned no text")
+	if runErr != nil || strings.TrimSpace(answer) == "" {
+		if runErr == nil {
+			runErr = errors.New("agent returned no text")
+		}
+		logger.ErrorContext(ctx, "SIU assistant could not complete reply", "error", runErr)
+		// As in Agentiu's bridge, diagnostics stay in logs; finish the reply
+		// with a useful sentence even when the runtime produced no answer.
+		if strings.TrimSpace(answer) != "" {
+			answer += "\n\n"
+		}
+		if errors.Is(runErr, context.DeadlineExceeded) {
+			answer += "这次处理超时了，请稍后再试。"
+		} else {
+			answer += "抱歉，刚才没能完成回复，请再试一次。"
+		}
 	}
 	if !canStream || streamID == "" {
-		return h.sendPlain(ctx, key, answer)
+		return errors.Join(runErr, h.sendPlain(ctx, key, answer))
 	}
 	// If a later chunk failed, finish the existing reply with the full text.
 	// This avoids leaving a partial reply beside a duplicate plain message.
@@ -239,7 +264,7 @@ func (h *EventHandler) runAgent(handle run.Handle, key conversation.Key, message
 		return fmt.Errorf("finish SIU reply %s: %w", streamID, err)
 	}
 	logger.InfoContext(ctx, "SIU reply delivered", "reply_message_id", streamID, "delivery", "stream")
-	return nil
+	return runErr
 }
 
 func (h *EventHandler) sendPlain(ctx context.Context, key conversation.Key, answer string) error {

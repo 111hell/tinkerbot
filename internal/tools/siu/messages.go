@@ -14,16 +14,22 @@ type sendPhotoArgs struct {
 	FileID       string `json:"file_id,omitempty"`
 	ThumbnailURL string `json:"thumbnail_url,omitempty"`
 	Text         string `json:"text,omitempty"`
-	Width        uint32 `json:"width"`
-	Height       uint32 `json:"height"`
+	Width        uint32 `json:"width,omitempty"`
+	Height       uint32 `json:"height,omitempty"`
 	PreviewARGB  string `json:"preview_argb,omitempty"`
 }
 
 func NewSendPhoto(client *siuc.Client) agent.Tool {
 	return newTool(SendPhotoName,
-		"Send an existing image to the current SIU conversation when requested; recipient and Topic are supplied automatically. This delivers an image, it does not generate or search for one. Supply a real external image URL or this Bot's uploaded file ID and known pixel dimensions. Do not invent URLs, file IDs or dimensions; text is an optional caption.",
-		`{"type":"object","properties":{"image_url":{"type":"string","description":"Existing external image URL; provide this or file_id."},"file_id":{"type":"string","description":"Existing file uploaded by this Bot; provide this or image_url."},"thumbnail_url":{"type":"string","description":"Optional existing thumbnail URL."},"text":{"type":"string","description":"Optional image caption."},"width":{"type":"integer","minimum":1,"description":"Actual image width in pixels."},"height":{"type":"integer","minimum":1,"description":"Actual image height in pixels."},"preview_argb":{"type":"string","description":"Optional preview color in the SIU ARGB format, if known."}},"required":["width","height"],"additionalProperties":false}`,
+		"Send an existing image to the current SIU conversation when requested; recipient and Topic are supplied automatically. Supply an external image URL or uploaded file ID; width and height default to standard dimensions (800x600) if omitted. Text is an optional caption.",
+		`{"type":"object","properties":{"image_url":{"type":"string","description":"Existing external image URL; provide this or file_id."},"file_id":{"type":"string","description":"Existing file uploaded by this Bot; provide this or image_url."},"thumbnail_url":{"type":"string","description":"Optional existing thumbnail URL."},"text":{"type":"string","description":"Optional image caption."},"width":{"type":"integer","minimum":1,"description":"Optional image width in pixels; defaults to 800."},"height":{"type":"integer","minimum":1,"description":"Optional image height in pixels; defaults to 600."},"preview_argb":{"type":"string","description":"Optional preview color in the SIU ARGB format."}},"additionalProperties":false}`,
 		func(ctx context.Context, current conversation.Current, args sendPhotoArgs) (any, error) {
+			if args.Width == 0 {
+				args.Width = 800
+			}
+			if args.Height == 0 {
+				args.Height = 600
+			}
 			request := siuc.SendPhotoRequest{TopicID: current.TopicID, ImageURL: args.ImageURL, FileID: args.FileID, ThumbnailURL: args.ThumbnailURL, Text: args.Text, Width: args.Width, Height: args.Height, PreviewARGB: args.PreviewARGB}
 			if current.GroupID != 0 {
 				request.ToGroupID = current.GroupID

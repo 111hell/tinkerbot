@@ -26,6 +26,48 @@ type UploadMediaResponse struct {
 	ExpiredAt time.Time `json:"expired_at"`
 }
 
+// DownloadMedia reads an SIU attachment's presigned URL without Bot credentials.
+// Like Agentiu's downloadLimit, both time and bytes are bounded and signed URLs
+// are excluded from errors. The caller supplies the remaining per-message budget.
+func (c *Client) DownloadMedia(ctx context.Context, fileURL string, limit int64) ([]byte, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("media download budget exhausted")
+	}
+	u, err := url.Parse(fileURL)
+	if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+		return nil, fmt.Errorf("invalid media download URL")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("invalid media download request")
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			err = urlErr.Err
+		}
+		return nil, fmt.Errorf("download SIU media: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("download SIU media: HTTP %d", resp.StatusCode)
+	}
+	if resp.ContentLength > limit {
+		return nil, fmt.Errorf("download SIU media exceeds %d bytes", limit)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("read SIU media: %w", err)
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("download SIU media exceeds %d bytes", limit)
+	}
+	return data, nil
+}
+
 // UploadMedia allocates a file and its presigned PUT URL; it does not upload bytes.
 func (c *Client) UploadMedia(ctx context.Context, request UploadMediaRequest) (*UploadMediaResponse, error) {
 	var response UploadMediaResponse
